@@ -659,7 +659,7 @@ inline bool memory_desc_strides_check(
 
         // Make an exception for strides[d] == 0 as it has broadcast semantics
         // Note: owing to being sorted, these are the initial strides
-        if (strides[d] == 0)
+        if ((strides[d] == 0) || (md.padded_dims[d] == 1))
             continue;
         else if (strides[d] < min_stride)
             return false;
