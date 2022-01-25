@@ -1994,6 +1994,65 @@ DNNL_BACKEND_REGISTER_TRANSFORMATION_PASS(dnnl, conv_bias_relu_fusion)
                     return fused_op;
                 });
 
+DNNL_BACKEND_REGISTER_TRANSFORMATION_PASS(dnnl, conv_hardswish_fusion)
+        .set_priority(9.8f)
+        .set_attr<FCreateV2Pattern>("FCreateV2Pattern",
+                [](const std::shared_ptr<pb_graph_t> &pgraph) -> void {
+                    pm::pb_op *conv
+                            = pgraph->append_op(impl::op_kind::Convolution);
+                    conv->SET_NUM_INPUTS_CHECK(2);
+
+                    pgraph->append_op(impl::op_kind::HardSwish,
+                            in_edges_t {in_edge(0, conv, 0)});
+                })
+        .set_attr<FCreateV2Pattern>("FCreateV2Pattern",
+                [](const std::shared_ptr<pb_graph_t> &pgraph) -> void {
+                    pm::pb_op *conv
+                            = pgraph->append_op(impl::op_kind::Convolution);
+                    conv->SET_NUM_INPUTS_CHECK(2);
+
+                    pgraph->append_op(impl::op_kind::HardSwish,
+                            in_edges_t {in_edge(0, conv, 0)});
+                })
+        .set_attr<FCreateV2FusedOp>(
+                "FCreateV2FusedOp", []() -> std::shared_ptr<op_t> {
+                    std::shared_ptr<op_t> fused_op
+                            = std::make_shared<op_t>(op_kind::conv_bias_relu);
+                    fused_op->set_attr<std::string>("backend", "dnnl");
+                    return fused_op;
+                });
+
+DNNL_BACKEND_REGISTER_TRANSFORMATION_PASS(dnnl, conv_bias_hardswish_fusion)
+        .set_priority(9.8f)
+        .set_attr<FCreateV2Pattern>("FCreateV2Pattern",
+                [](const std::shared_ptr<pb_graph_t> &pgraph) -> void {
+                    pm::pb_op *conv
+                            = pgraph->append_op(impl::op_kind::Convolution);
+                    conv->SET_NUM_INPUTS_CHECK(2);
+
+                    pm::pb_op *bias = pgraph->append_op(impl::op_kind::BiasAdd,
+                            in_edges_t {in_edge(0, conv, 0)});
+
+                    pgraph->append_op(impl::op_kind::HardSwish,
+                            in_edges_t {in_edge(0, bias, 0)});
+                })
+        .set_attr<FCreateV2Pattern>("FCreateV2Pattern",
+                [](const std::shared_ptr<pb_graph_t> &pgraph) -> void {
+                    pm::pb_op *conv
+                            = pgraph->append_op(impl::op_kind::Convolution);
+                    conv->SET_NUM_INPUTS_CHECK(3);
+
+                    pgraph->append_op(impl::op_kind::HardSwish,
+                            in_edges_t {in_edge(0, conv, 0)});
+                })
+        .set_attr<FCreateV2FusedOp>(
+                "FCreateV2FusedOp", []() -> std::shared_ptr<op_t> {
+                    std::shared_ptr<op_t> fused_op
+                            = std::make_shared<op_t>(op_kind::conv_bias_relu);
+                    fused_op->set_attr<std::string>("backend", "dnnl");
+                    return fused_op;
+                });
+
 DNNL_BACKEND_REGISTER_TRANSFORMATION_PASS(dnnl, conv_bias_hardtanh_fusion)
         .set_priority(9.8f)
         .set_attr<FCreateV2Pattern>("FCreateV2Pattern",
