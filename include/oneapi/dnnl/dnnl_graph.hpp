@@ -774,6 +774,7 @@ public:
         Exp = kExp,
         GELU = kGELU,
         GELUBackprop = kGELUBackprop,
+        HardSwish = kHardSwish,
         HardTanh = kHardTanh,
         HardTanhBackprop = kHardTanhBackprop,
         Index = kIndex,
