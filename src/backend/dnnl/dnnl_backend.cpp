@@ -185,6 +185,7 @@ bool dnnl_backend::register_kernels() {
     DNNL_REGISTER_KERNEL(impl::op_kind::Elu, float_eltwise_fwd)
     DNNL_REGISTER_KERNEL(impl::op_kind::Exp, float_eltwise_fwd)
     DNNL_REGISTER_KERNEL(impl::op_kind::GELU, float_eltwise_fwd)
+    DNNL_REGISTER_KERNEL(impl::op_kind::HardSwish, float_eltwise_fwd)
     DNNL_REGISTER_KERNEL(impl::op_kind::HardTanh, float_eltwise_fwd)
     DNNL_REGISTER_KERNEL(impl::op_kind::Log, float_eltwise_fwd)
     DNNL_REGISTER_KERNEL(impl::op_kind::Pow, float_eltwise_fwd)
