@@ -6748,6 +6748,22 @@ test::vector<float> round_func(const test::vector<float> &ref_dst) {
     return out;
 }
 
+test::vector<float> hardswish_func(const test::vector<float> &ref_dst) {
+    test::vector<float> out;
+    for (auto &rdst : ref_dst) {
+        float res;
+        if (rdst > 3.f) {
+            res = rdst;
+        } else if (rdst > -3.f && rdst <= 3.f) {
+            res = rdst * (rdst + 3.f) / 6.f;
+        } else {
+            res = 0.f;
+        }
+        out.emplace_back(static_cast<float>(res));
+    }
+    return out;
+}
+
 void test_eltwise_common(test::vector<float> &src, test::vector<float> &ref_dst,
         dnnl::graph::impl::dims &dims, const dnnl_graph_op_kind_t op_kind,
         const std::string &op_name,
@@ -7054,6 +7070,9 @@ TEST(Execute, ConvBiasEltwise) {
             eltwise_param {"conv_bias_sqrt_fusion", {1.0},
                     sqrt_func({0.0, 3.5, 6.0, 2.5}), impl::op_kind::Sqrt,
                     "Sqrt", {}},
+            eltwise_param {"conv_bias_hardswish_fusion", {1.0},
+                    hardswish_func({0.0, 3.5, 6.0, 2.5}),
+                    impl::op_kind::HardSwish, "HardSwish", {}},
     };
 
     for (auto &param : params1) {
@@ -7122,6 +7141,91 @@ TEST(Execute, ConvBiasEltwise) {
 
         impl::stream_t &strm = get_stream();
         cp.execute(&strm, {src_ts, weight_ts, bias_ts}, {eltwise_dst_ts});
+        strm.wait();
+        for (size_t i = 0; i < dst.size(); ++i) {
+            ASSERT_FLOAT_EQ(dst[i], param.ref_dst[i]);
+        }
+    }
+}
+
+TEST(Execute, ConvEltwise) {
+    using dims = dnnl::graph::impl::dnnl_impl::dims;
+
+    // default engine kind is cpu.
+    impl::engine_t &eng = get_engine();
+    test::vector<float> src {-3.0, -1.5, 2.0, 0.5, -0.5, -1.0, 1.0, 1.5, 2.0,
+            2.5, -1.0, 0.0, 3.0, -2.0, -1.0, 4.0};
+    test::vector<float> weight {1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0};
+    test::vector<float> dst {0.0, 0.0, 0.0, 0.0};
+
+    std::vector<eltwise_param> params1 = {
+            eltwise_param {"conv_hardswish_fusion", /*not used*/ {0.0},
+                    hardswish_func({-1.0, 2.5, 5.0, 1.5}),
+                    impl::op_kind::HardSwish, "HardSwish", {}},
+    };
+
+    for (auto &param : params1) {
+        impl::op_t conv_op(1, impl::op_kind::Convolution, "Convolution");
+        conv_op.set_attr<dims>("strides", {1, 1});
+        conv_op.set_attr<dims>("dilations", {1, 1});
+        conv_op.set_attr<dims>("pads_begin", {0, 0});
+        conv_op.set_attr<dims>("pads_end", {0, 0});
+        conv_op.set_attr<int64_t>("groups", 1);
+        conv_op.set_attr<std::string>("data_format", "NCX");
+        conv_op.set_attr<std::string>("filter_format", "OIX");
+        impl::op_t eltwise_op(2, param.op_kind, param.op_name);
+        for (auto &attr : param.attrs) {
+            eltwise_op.set_attr<float>(attr.first, attr.second);
+        }
+
+        // prepare logical tensor
+        impl::logical_tensor_t src_lt = utils::logical_tensor_init(
+                0, {1, 1, 4, 4}, impl::data_type::f32);
+        impl::logical_tensor_t weight_lt = utils::logical_tensor_init(
+                1, {1, 1, 3, 3}, impl::data_type::f32);
+        impl::logical_tensor_t dst_lt = utils::logical_tensor_init(
+                4, {1, 1, 2, 2}, impl::data_type::f32);
+        impl::logical_tensor_t eltwise_dst_lt = utils::logical_tensor_init(
+                5, {1, 1, 2, 2}, impl::data_type::f32);
+
+        conv_op.add_input(src_lt);
+        conv_op.add_input(weight_lt);
+        conv_op.add_output(dst_lt);
+        eltwise_op.add_input(dst_lt);
+        eltwise_op.add_output(eltwise_dst_lt);
+
+        impl::graph_t g(eng.kind());
+        g.add_op(&conv_op);
+        g.add_op(&eltwise_op);
+        g.build_graph();
+
+        impl::pass::pass_base_ptr apass = get_pass(param.pass_name);
+        apass->run(g);
+        ASSERT_EQ(g.get_num_partitions(), 1);
+        auto part = g.get_partitions()[0];
+
+        // compile
+        impl::partition_t p;
+        p.init(part);
+
+        impl::compiled_partition_t cp(p);
+
+        std::vector<const impl::logical_tensor_t *> inputs {
+                &src_lt, &weight_lt};
+        std::vector<const impl::logical_tensor_t *> outputs {&eltwise_dst_lt};
+
+        p.compile(&cp, inputs, outputs, &eng);
+
+        impl::logical_tensor_t lt;
+        cp.query_logical_tensor(eltwise_dst_lt.id, &lt);
+        ASSERT_EQ(lt.layout_type, impl::layout_type::strided);
+
+        impl::tensor_t src_ts(src_lt, &eng, src.data());
+        impl::tensor_t weight_ts(weight_lt, &eng, weight.data());
+        impl::tensor_t eltwise_dst_ts(eltwise_dst_lt, &eng, dst.data());
+
+        impl::stream_t &strm = get_stream();
+        cp.execute(&strm, {src_ts, weight_ts}, {eltwise_dst_ts});
         strm.wait();
         for (size_t i = 0; i < dst.size(); ++i) {
             ASSERT_FLOAT_EQ(dst[i], param.ref_dst[i]);
